@@ -52,7 +52,7 @@ jobs:
           echo "${{ steps.fe.outputs.status }}" > .monitor_state/frontend.txt
           echo "${{ steps.be.outputs.status }}" > .monitor_state/backend.txt
 
-      - name: Notify Telegram (only when status changes)
+            - name: Notify Telegram (only when status changes)
         if: steps.prev.outputs.fe_prev != steps.fe.outputs.status || steps.prev.outputs.be_prev != steps.be.outputs.status
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
@@ -63,27 +63,33 @@ jobs:
           FE_NOW="${{ steps.fe.outputs.status }}"
           BE_NOW="${{ steps.be.outputs.status }}"
 
-          MSG="📡 ANFA MONITORING\n"
-          MSG="${MSG}🕒 Vaqt (UTC): $(date -u '+%Y-%m-%d %H:%M:%S')\n\n"
+          MSG="📡 ANFA MONITORING OGОHLANTIRISHI
+          🕒 Vaqt (UTC): $(date -u '+%Y-%m-%d %H:%M:%S')
+
+          "
 
           # Frontend change
           if [ "$FE_PREV" != "$FE_NOW" ]; then
             if [ "$FE_NOW" = "down" ]; then
-              MSG="${MSG}🚨 FRONTEND: ISHLAMAYAPTI (DOWN)\n"
+              MSG="${MSG}🚨 FRONTEND: ISHLAMAYAPTI (DOWN)
+          "
             else
-              MSG="${MSG}✅ FRONTEND: QAYTA ISHLAYAPTI (UP)\n"
+              MSG="${MSG}✅ FRONTEND: QAYTA ISHLAYAPTI (UP)
+          "
             fi
           fi
 
           # Backend change
           if [ "$BE_PREV" != "$BE_NOW" ]; then
             if [ "$BE_NOW" = "down" ]; then
-              MSG="${MSG}🚨 BACKEND: ISHLAMAYAPTI (DOWN)\n"
+              MSG="${MSG}🚨 BACKEND: ISHLAMAYAPTI (DOWN)
+          "
             else
-              MSG="${MSG}✅ BACKEND: QAYTA ISHLAYAPTI (UP)\n"
+              MSG="${MSG}✅ BACKEND: QAYTA ISHLAYAPTI (UP)
+          "
             fi
           fi
 
-          curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
-            -H "Content-Type: application/json" \
-            -d "{\"chat_id\":${TG_CHAT_ID},\"text\":\"${MSG}\"}"
+          curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TG_CHAT_ID}" \
+            --data-urlencode "text=${MSG}"
