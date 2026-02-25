@@ -5,46 +5,101 @@ on:
     - cron: "*/5 * * * *"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
-  check:
+  monitor:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Check Frontend
+      - name: Oldingi holatni tiklash
+        uses: actions/cache@v4
+        with:
+          path: .monitor_state
+          key: anfa-monitor-state
+          restore-keys: |
+            anfa-monitor-state
+
+      - name: Papkani yaratish
+        run: mkdir -p .monitor_state
+
+      - name: Oldingi holatni o‘qish
+        id: prev
+        run: |
+          FE_PREV="unknown"
+          BE_PREV="unknown"
+
+          if [ -f .monitor_state/frontend.txt ]; then
+            FE_PREV=$(cat .monitor_state/frontend.txt)
+          fi
+
+          if [ -f .monitor_state/backend.txt ]; then
+            BE_PREV=$(cat .monitor_state/backend.txt)
+          fi
+
+          echo "fe_prev=$FE_PREV" >> $GITHUB_OUTPUT
+          echo "be_prev=$BE_PREV" >> $GITHUB_OUTPUT
+
+      - name: Frontendni tekshirish
         id: fe
         run: |
           set +e
           curl -fsS -m 15 https://anfa-feedback.uz >/dev/null
-          echo "status=$?" >> $GITHUB_OUTPUT
+          if [ "$?" = "0" ]; then
+            echo "status=up" >> $GITHUB_OUTPUT
+          else
+            echo "status=down" >> $GITHUB_OUTPUT
+          fi
 
-      - name: Check Backend
+      - name: Backendni tekshirish
         id: be
         run: |
           set +e
           curl -fsS -m 15 https://api.anfa-feedback.uz/health >/dev/null
-          echo "status=$?" >> $GITHUB_OUTPUT
+          if [ "$?" = "0" ]; then
+            echo "status=up" >> $GITHUB_OUTPUT
+          else
+            echo "status=down" >> $GITHUB_OUTPUT
+          fi
 
-            - name: Ogohlantirish (faqat o‘chsa)
-        if: steps.fe.outputs.status != '0' || steps.be.outputs.status != '0'
+      - name: Holatni saqlash
+        run: |
+          echo "${{ steps.fe.outputs.status }}" > .monitor_state/frontend.txt
+          echo "${{ steps.be.outputs.status }}" > .monitor_state/backend.txt
+
+      - name: Telegramga xabar yuborish
+        if: steps.prev.outputs.fe_prev != steps.fe.outputs.status || steps.prev.outputs.be_prev != steps.be.outputs.status
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
-          MSG="🚨 ANFA MONITORING OGОHLANTIRISH\n\n"
+          FE_PREV="${{ steps.prev.outputs.fe_prev }}"
+          BE_PREV="${{ steps.prev.outputs.be_prev }}"
+          FE_NOW="${{ steps.fe.outputs.status }}"
+          BE_NOW="${{ steps.be.outputs.status }}"
 
-          if [ "${{ steps.fe.outputs.status }}" != "0" ]; then
-            MSG="${MSG}❌ Frontend: ISHLAMAYAPTI (DOWN)\n"
-          else
-            MSG="${MSG}✅ Frontend: ISHLAYAPTI (UP)\n"
+          TIME_UTC=$(date -u '+%Y-%m-%d %H:%M:%S')
+
+          MSG="📡 ANFA MONITORING OGОHLANTIRISHI\n"
+          MSG="${MSG}🕒 Vaqt (UTC): ${TIME_UTC}\n\n"
+
+          if [ "$FE_PREV" != "$FE_NOW" ]; then
+            if [ "$FE_NOW" = "down" ]; then
+              MSG="${MSG}🚨 FRONTEND: ISHLAMAYAPTI (DOWN)\n"
+            else
+              MSG="${MSG}✅ FRONTEND: QAYTA ISHLAYAPTI (UP)\n"
+            fi
           fi
 
-          if [ "${{ steps.be.outputs.status }}" != "0" ]; then
-            MSG="${MSG}❌ Backend: ISHLAMAYAPTI (DOWN)\n"
-          else
-            MSG="${MSG}✅ Backend: ISHLAYAPTI (UP)\n"
+          if [ "$BE_PREV" != "$BE_NOW" ]; then
+            if [ "$BE_NOW" = "down" ]; then
+              MSG="${MSG}🚨 BACKEND: ISHLAMAYAPTI (DOWN)\n"
+            else
+              MSG="${MSG}✅ BACKEND: QAYTA ISHLAYAPTI (UP)\n"
+            fi
           fi
 
-          MSG="${MSG}\n🕒 Vaqt (UTC): $(date -u '+%Y-%m-%d %H:%M:%S')"
-
-          curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
-            -H "Content-Type: application/json" \
-            -d "{\"chat_id\":${TG_CHAT_ID},\"text\":\"${MSG}\"}"
+          curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TG_CHAT_ID}" \
+            --data-urlencode "text=${MSG}"
