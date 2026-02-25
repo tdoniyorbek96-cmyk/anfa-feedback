@@ -1,0 +1,13 @@
+# secrets
+.env
+.env.*
+!.env.example
+
+# deps
+node_modules/
+
+# logs
+*.log
+
+# local data (agar kerak bo'lmasa repo'ga kiritmang)
+data/
