@@ -1,0 +1,50 @@
+name: Anfa Uptime Monitor
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Frontend
+        id: fe
+        run: |
+          set +e
+          curl -fsS -m 15 https://anfa-feedback.uz >/dev/null
+          echo "status=$?" >> $GITHUB_OUTPUT
+
+      - name: Check Backend
+        id: be
+        run: |
+          set +e
+          curl -fsS -m 15 https://api.anfa-feedback.uz/health >/dev/null
+          echo "status=$?" >> $GITHUB_OUTPUT
+
+      - name: Alert if Down
+        if: steps.fe.outputs.status != '0' || steps.be.outputs.status != '0'
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        run: |
+          MSG="🚨 Anfa Monitoring ALERT\n"
+
+          if [ "${{ steps.fe.outputs.status }}" != "0" ]; then
+            MSG="${MSG}❌ Frontend DOWN\n"
+          else
+            MSG="${MSG}✅ Frontend UP\n"
+          fi
+
+          if [ "${{ steps.be.outputs.status }}" != "0" ]; then
+            MSG="${MSG}❌ Backend DOWN\n"
+          else
+            MSG="${MSG}✅ Backend UP\n"
+          fi
+
+          MSG="${MSG}Time: $(date -u)"
+
+          curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "{\"chat_id\":${TG_CHAT_ID},\"text\":\"${MSG}\"}"
