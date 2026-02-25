@@ -9,11 +9,10 @@ permissions:
   contents: read
 
 jobs:
-  monitor:
+  check:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Oldingi holatni tiklash
+      - name: Restore last status (cache)
         uses: actions/cache@v4
         with:
           path: .monitor_state
@@ -21,54 +20,39 @@ jobs:
           restore-keys: |
             anfa-monitor-state
 
-      - name: Papkani yaratish
+      - name: Ensure state folder exists
         run: mkdir -p .monitor_state
 
-      - name: Oldingi holatni o‘qish
+      - name: Read previous status
         id: prev
         run: |
           FE_PREV="unknown"
           BE_PREV="unknown"
-
-          if [ -f .monitor_state/frontend.txt ]; then
-            FE_PREV=$(cat .monitor_state/frontend.txt)
-          fi
-
-          if [ -f .monitor_state/backend.txt ]; then
-            BE_PREV=$(cat .monitor_state/backend.txt)
-          fi
-
+          if [ -f .monitor_state/frontend.txt ]; then FE_PREV="$(cat .monitor_state/frontend.txt)"; fi
+          if [ -f .monitor_state/backend.txt ]; then BE_PREV="$(cat .monitor_state/backend.txt)"; fi
           echo "fe_prev=$FE_PREV" >> $GITHUB_OUTPUT
           echo "be_prev=$BE_PREV" >> $GITHUB_OUTPUT
 
-      - name: Frontendni tekshirish
+      - name: Check Frontend
         id: fe
         run: |
           set +e
           curl -fsS -m 15 https://anfa-feedback.uz >/dev/null
-          if [ "$?" = "0" ]; then
-            echo "status=up" >> $GITHUB_OUTPUT
-          else
-            echo "status=down" >> $GITHUB_OUTPUT
-          fi
+          if [ "$?" = "0" ]; then echo "status=up" >> $GITHUB_OUTPUT; else echo "status=down" >> $GITHUB_OUTPUT; fi
 
-      - name: Backendni tekshirish
+      - name: Check Backend
         id: be
         run: |
           set +e
           curl -fsS -m 15 https://api.anfa-feedback.uz/health >/dev/null
-          if [ "$?" = "0" ]; then
-            echo "status=up" >> $GITHUB_OUTPUT
-          else
-            echo "status=down" >> $GITHUB_OUTPUT
-          fi
+          if [ "$?" = "0" ]; then echo "status=up" >> $GITHUB_OUTPUT; else echo "status=down" >> $GITHUB_OUTPUT; fi
 
-      - name: Holatni saqlash
+      - name: Save current status
         run: |
           echo "${{ steps.fe.outputs.status }}" > .monitor_state/frontend.txt
           echo "${{ steps.be.outputs.status }}" > .monitor_state/backend.txt
 
-      - name: Telegramga xabar yuborish
+      - name: Notify Telegram (only when status changes)
         if: steps.prev.outputs.fe_prev != steps.fe.outputs.status || steps.prev.outputs.be_prev != steps.be.outputs.status
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
@@ -79,11 +63,10 @@ jobs:
           FE_NOW="${{ steps.fe.outputs.status }}"
           BE_NOW="${{ steps.be.outputs.status }}"
 
-          TIME_UTC=$(date -u '+%Y-%m-%d %H:%M:%S')
+          MSG="📡 ANFA MONITORING\n"
+          MSG="${MSG}🕒 Vaqt (UTC): $(date -u '+%Y-%m-%d %H:%M:%S')\n\n"
 
-          MSG="📡 ANFA MONITORING OGОHLANTIRISHI\n"
-          MSG="${MSG}🕒 Vaqt (UTC): ${TIME_UTC}\n\n"
-
+          # Frontend change
           if [ "$FE_PREV" != "$FE_NOW" ]; then
             if [ "$FE_NOW" = "down" ]; then
               MSG="${MSG}🚨 FRONTEND: ISHLAMAYAPTI (DOWN)\n"
@@ -92,6 +75,7 @@ jobs:
             fi
           fi
 
+          # Backend change
           if [ "$BE_PREV" != "$BE_NOW" ]; then
             if [ "$BE_NOW" = "down" ]; then
               MSG="${MSG}🚨 BACKEND: ISHLAMAYAPTI (DOWN)\n"
@@ -100,9 +84,6 @@ jobs:
             fi
           fi
 
-          # \n larni haqiqiy yangi qatorga aylantirish
-          MSG=$(printf "%b" "$MSG")
-
-          curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
-          --data-urlencode "chat_id=${TG_CHAT_ID}" \
-          --data-urlencode "text=${MSG}"
+          curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "{\"chat_id\":${TG_CHAT_ID},\"text\":\"${MSG}\"}"
