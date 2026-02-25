@@ -100,6 +100,9 @@ jobs:
             fi
           fi
 
+          # \n larni haqiqiy yangi qatorga aylantirish
+          MSG=$(printf "%b" "$MSG")
+
           curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
-            --data-urlencode "chat_id=${TG_CHAT_ID}" \
-            --data-urlencode "text=${MSG}"
+          --data-urlencode "chat_id=${TG_CHAT_ID}" \
+          --data-urlencode "text=${MSG}"
